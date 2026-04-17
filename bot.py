@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 from datetime import datetime, timedelta
+from urllib.parse import quote
 from flask import Flask, Response
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -17,7 +18,12 @@ TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL_ID = "@newChapterJob"
 MANAGER_USERNAME = "New_Chapterr24"
 OTHER_JOBS_CHANNEL = "https://t.me/jobNchapter"
-TEMPLATE_TEXT = "Здравствуйте, меня заинтересовал этот слот. Могу ли я приступить к его выполнению, и что для этого требуется?"
+
+# Шаблон текста для ссылки (будет подставляться название слота и оплата)
+MESSAGE_TEMPLATE = (
+    "Здравствуйте, меня интересует слот {slot_name} ({price}). "
+    "Обязуюсь отправить скриншот/ы до 23:59 МСК, с правилами ознакомлен."
+)
 
 CLOSED_MESSAGE = (
     "Извините, данный слот устарел или был закрыт, в ближайшее время появится новый ожидайте 😀\n"
@@ -99,21 +105,20 @@ async def scheduler():
                 logging.error(f"Ошибка вечернего сообщения: {e}")
 
 # --- Вспомогательная функция отправки слота ---
-async def publish_slot(message: types.Message, slot_name: str, post_text: str):
+async def publish_slot(message: types.Message, slot_name: str, post_text: str, price: str):
     global slot_counter
     slot_id = slot_counter
     slot_counter += 1
 
-    active_slots[slot_id] = {
-        "message_id": None,
-        "command": slot_name,
-        "post_text": post_text
-    }
+    # Формируем текст для ссылки
+    raw_text = MESSAGE_TEMPLATE.format(slot_name=slot_name, price=price)
+    encoded_text = quote(raw_text, safe='')
+    url = f"https://t.me/{MANAGER_USERNAME}?text={encoded_text}"
 
     builder = InlineKeyboardBuilder()
     builder.button(
         text="✋ Взять слот",
-        callback_data=f"take_slot:{slot_id}"
+        url=url
     )
     builder.button(
         text="📋 Другие задания",
@@ -128,7 +133,11 @@ async def publish_slot(message: types.Message, slot_name: str, post_text: str):
         parse_mode=ParseMode.HTML
     )
 
-    active_slots[slot_id]["message_id"] = sent_msg.message_id
+    active_slots[slot_id] = {
+        "message_id": sent_msg.message_id,
+        "command": slot_name,
+        "post_text": post_text
+    }
     await message.answer(f"✅ Слот «{slot_name}» опубликован в канале! ID: {slot_id}")
 
 # --- Команды для всех пользователей ---
@@ -138,7 +147,7 @@ async def cmd_start(message: types.Message):
         "👋 <b>Привет!</b>\n\n"
         "Я бот для работы со слотами.\n"
         "Чтобы взять задание, перейдите в наш канал @newChapterJob и нажмите кнопку <b>«✋ Взять слот»</b> под интересующим постом.\n\n"
-        "После этого ваша заявка будет отправлена менеджеру, и он свяжется с вами.\n\n"
+        "После этого откроется чат с менеджером, где уже будет готовый текст заявки. Вам останется только отправить его.\n\n"
         "Если у вас есть вопросы, обратитесь к @New_Chapterr24.\n\n"
         "Хорошего дня!"
     )
@@ -150,7 +159,7 @@ async def cmd_help(message: types.Message):
         "👋 <b>Привет!</b>\n\n"
         "Я бот для работы со слотами.\n"
         "Чтобы взять задание, перейдите в наш канал @newChapterJob и нажмите кнопку <b>«✋ Взять слот»</b> под интересующим постом.\n\n"
-        "После этого ваша заявка будет отправлена менеджеру, и он свяжется с вами.\n\n"
+        "После этого откроется чат с менеджером, где уже будет готовый текст заявки. Вам останется только отправить его.\n\n"
         "Если у вас есть вопросы, обратитесь к @New_Chapterr24.\n\n"
         "Хорошего дня!"
     )
@@ -188,7 +197,7 @@ async def yandex_slot(message: types.Message):
         "Требуется человек: До закрытия слота.\n"
         "Нажмите кнопку ниже, чтобы забрать слот."
     )
-    await publish_slot(message, "Яндекс карты", text)
+    await publish_slot(message, "Яндекс карты", text, "150₽")
 
 @dp.message(Command("google"), is_admin)
 async def google_slot(message: types.Message):
@@ -200,7 +209,7 @@ async def google_slot(message: types.Message):
         "Требуется человек: До закрытия слота.\n"
         "Нажмите кнопку ниже, чтобы забрать слот."
     )
-    await publish_slot(message, "GOOGLE", text)
+    await publish_slot(message, "GOOGLE", text, "50₽")
 
 @dp.message(Command("gis"), is_admin)
 async def gis_slot(message: types.Message):
@@ -212,7 +221,7 @@ async def gis_slot(message: types.Message):
         "Требуется человек: До закрытия слота.\n"
         "Нажмите кнопку ниже, чтобы забрать слот."
     )
-    await publish_slot(message, "2ГИС", text)
+    await publish_slot(message, "2ГИС", text, "50₽")
 
 @dp.message(Command("avito"), is_admin)
 async def avito_slot(message: types.Message):
@@ -224,7 +233,7 @@ async def avito_slot(message: types.Message):
         "Требуется человек: До закрытия слота.\n"
         "Нажмите кнопку ниже, чтобы забрать слот."
     )
-    await publish_slot(message, "Авито", text)
+    await publish_slot(message, "Авито", text, "700₽")
 
 @dp.message(Command("vk"), is_admin)
 async def vk_slot(message: types.Message):
@@ -236,7 +245,7 @@ async def vk_slot(message: types.Message):
         "Требуется человек: До закрытия слота.\n"
         "Нажмите кнопку ниже, чтобы забрать слот."
     )
-    await publish_slot(message, "ВК", text)
+    await publish_slot(message, "ВК", text, "50₽")
 
 @dp.message(Command("otzovik"), is_admin)
 async def otzovik_slot(message: types.Message):
@@ -248,7 +257,7 @@ async def otzovik_slot(message: types.Message):
         "Требуется человек: До закрытия слота.\n"
         "Нажмите кнопку ниже, чтобы забрать слот."
     )
-    await publish_slot(message, "Отзовик", text)
+    await publish_slot(message, "Отзовик", text, "100₽")
 
 @dp.message(Command("doctoru"), is_admin)
 async def doctoru_slot(message: types.Message):
@@ -260,7 +269,7 @@ async def doctoru_slot(message: types.Message):
         "Требуется человек: До закрытия слота.\n"
         "Нажмите кнопку ниже, чтобы забрать слот."
     )
-    await publish_slot(message, "Docto ru", text)
+    await publish_slot(message, "Docto ru", text, "100₽")
 
 # --- Управление слотами (только админы) ---
 @dp.message(Command("slots"), is_admin)
@@ -323,44 +332,6 @@ async def close_all_slots(message: types.Message):
             active_slots.pop(slot_id, None)
 
     await message.answer(f"✅ Закрыто слотов: {count}")
-
-# --- Обработчик нажатия кнопки «Взять слот» (доступен всем) ---
-@dp.callback_query(F.data.startswith("take_slot:"))
-async def process_take_slot(callback: CallbackQuery):
-    slot_id = int(callback.data.split(":")[1])
-
-    if slot_id not in active_slots:
-        await callback.answer("❌ Этот слот уже неактивен.", show_alert=True)
-        return
-
-    slot_data = active_slots[slot_id]
-    post_text = slot_data["post_text"]
-    user = callback.from_user
-    user_mention = f"@{user.username}" if user.username else user.full_name
-
-    message_to_manager = (
-        f"📨 <b>Запрос на слот от {user_mention}</b>\n\n"
-        f"<i>Слот: {slot_data['command']}</i>\n\n"
-        f"<i>Текст поста:</i>\n{post_text}\n\n"
-        f"<i>Сообщение от кандидата:</i>\n{TEMPLATE_TEXT}"
-    )
-
-    try:
-        await bot.send_message(
-            chat_id=f"@{MANAGER_USERNAME}",
-            text=message_to_manager,
-            parse_mode=ParseMode.HTML
-        )
-        await callback.answer("✅ Ваша заявка отправлена! Менеджер скоро свяжется с вами.", show_alert=True)
-    except Exception as e:
-        logging.error(f"Не удалось отправить сообщение менеджеру: {e}")
-        await callback.answer("❌ Произошла ошибка. Попробуйте позже или свяжитесь с менеджером напрямую.", show_alert=True)
-
-    # Убираем кнопку (без ошибки, если уже убрана)
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception as e:
-        logging.warning(f"Не удалось убрать кнопку (возможно, уже убрана): {e}")
 
 # --- Точка входа ---
 async def main():

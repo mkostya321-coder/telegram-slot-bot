@@ -69,7 +69,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
 
-# --- Планировщик авто‑сообщений (по МСК) ---
+# --- Планировщик авто-сообщений (по МСК) ---
 moscow_tz = pytz.timezone("Europe/Moscow")
 
 async def scheduler():
@@ -356,7 +356,11 @@ async def process_take_slot(callback: CallbackQuery):
         logging.error(f"Не удалось отправить сообщение менеджеру: {e}")
         await callback.answer("❌ Произошла ошибка. Попробуйте позже или свяжитесь с менеджером напрямую.", show_alert=True)
 
-    await callback.message.edit_reply_markup(reply_markup=callback.message.reply_markup)
+    # Убираем кнопку (без ошибки, если уже убрана)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception as e:
+        logging.warning(f"Не удалось убрать кнопку (возможно, уже убрана): {e}")
 
 # --- Точка входа ---
 async def main():

@@ -19,6 +19,7 @@ CHANNEL_ID = "@newChapterJob"
 MANAGER_USERNAME = "New_Chapterr24"
 OTHER_JOBS_CHANNEL = "https://t.me/jobNchapter"
 
+# Шаблон текста для ссылки (только сумма)
 MESSAGE_TEMPLATE = (
     "Здравствуйте, меня интересует слот {slot_name} ({price}). "
     "Обязуюсь отправить скриншот/ы до 23:59 МСК, с правилами ознакомлен."

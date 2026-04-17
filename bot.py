@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import os
+import threading
 from datetime import datetime, timedelta
+from flask import Flask, Response
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -52,6 +54,22 @@ class IsAdminFilter(BaseFilter):
 
 is_admin = IsAdminFilter()
 
+# --- Flask для Render ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+@app.route('/health')
+def health():
+    return Response(status=200)
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+# --- Планировщик авто‑сообщений (по МСК) ---
 moscow_tz = pytz.timezone("Europe/Moscow")
 
 async def scheduler():
@@ -80,6 +98,7 @@ async def scheduler():
             except Exception as e:
                 logging.error(f"Ошибка вечернего сообщения: {e}")
 
+# --- Вспомогательная функция отправки слота ---
 async def publish_slot(message: types.Message, slot_name: str, post_text: str):
     global slot_counter
     slot_id = slot_counter
@@ -112,6 +131,7 @@ async def publish_slot(message: types.Message, slot_name: str, post_text: str):
     active_slots[slot_id]["message_id"] = sent_msg.message_id
     await message.answer(f"✅ Слот «{slot_name}» опубликован в канале! ID: {slot_id}")
 
+# --- Команды для всех пользователей ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     text = (
@@ -136,6 +156,7 @@ async def cmd_help(message: types.Message):
     )
     await message.answer(text, parse_mode=ParseMode.HTML)
 
+# --- Команды для администраторов ---
 @dp.message(Command("helpadm"), is_admin)
 async def cmd_helpadm(message: types.Message):
     text = (
@@ -156,6 +177,7 @@ async def cmd_helpadm(message: types.Message):
     )
     await message.answer(text, parse_mode=ParseMode.HTML)
 
+# --- Публикация слотов (только админы) ---
 @dp.message(Command("yandex"), is_admin)
 async def yandex_slot(message: types.Message):
     text = (
@@ -240,6 +262,7 @@ async def doctoru_slot(message: types.Message):
     )
     await publish_slot(message, "Docto ru", text)
 
+# --- Управление слотами (только админы) ---
 @dp.message(Command("slots"), is_admin)
 async def list_slots(message: types.Message):
     if not active_slots:
@@ -301,6 +324,7 @@ async def close_all_slots(message: types.Message):
 
     await message.answer(f"✅ Закрыто слотов: {count}")
 
+# --- Обработчик нажатия кнопки «Взять слот» (доступен всем) ---
 @dp.callback_query(F.data.startswith("take_slot:"))
 async def process_take_slot(callback: CallbackQuery):
     slot_id = int(callback.data.split(":")[1])
@@ -334,10 +358,16 @@ async def process_take_slot(callback: CallbackQuery):
 
     await callback.message.edit_reply_markup(reply_markup=callback.message.reply_markup)
 
+# --- Точка входа ---
 async def main():
     asyncio.create_task(scheduler())
     print("Бот запущен. Ожидаю команды...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    # Запускаем бота
     asyncio.run(main())

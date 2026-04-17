@@ -19,7 +19,6 @@ CHANNEL_ID = "@newChapterJob"
 MANAGER_USERNAME = "New_Chapterr24"
 OTHER_JOBS_CHANNEL = "https://t.me/jobNchapter"
 
-# Шаблон текста для ссылки (будет подставляться название слота и оплата)
 MESSAGE_TEMPLATE = (
     "Здравствуйте, меня интересует слот {slot_name} ({price}). "
     "Обязуюсь отправить скриншот/ы до 23:59 МСК, с правилами ознакомлен."
@@ -51,8 +50,8 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+# Хранилище активных слотов: ключ = message_id (реальный ID сообщения в Telegram)
 active_slots = {}
-slot_counter = 1
 
 class IsAdminFilter(BaseFilter):
     async def __call__(self, message: Message) -> bool:
@@ -106,11 +105,7 @@ async def scheduler():
 
 # --- Вспомогательная функция отправки слота ---
 async def publish_slot(message: types.Message, slot_name: str, post_text: str, price: str):
-    global slot_counter
-    slot_id = slot_counter
-    slot_counter += 1
-
-    # Формируем текст для ссылки
+    # Формируем URL для кнопки
     raw_text = MESSAGE_TEMPLATE.format(slot_name=slot_name, price=price)
     encoded_text = quote(raw_text, safe='')
     url = f"https://t.me/{MANAGER_USERNAME}?text={encoded_text}"
@@ -133,12 +128,13 @@ async def publish_slot(message: types.Message, slot_name: str, post_text: str, p
         parse_mode=ParseMode.HTML
     )
 
-    active_slots[slot_id] = {
-        "message_id": sent_msg.message_id,
+    # Ключ — реальный message_id из Telegram
+    msg_id = sent_msg.message_id
+    active_slots[msg_id] = {
         "command": slot_name,
         "post_text": post_text
     }
-    await message.answer(f"✅ Слот «{slot_name}» опубликован в канале! ID: {slot_id}")
+    await message.answer(f"✅ Слот «{slot_name}» опубликован в канале! ID: {msg_id}")
 
 # --- Команды для всех пользователей ---
 @dp.message(Command("start"))
@@ -179,8 +175,8 @@ async def cmd_helpadm(message: types.Message):
         "/otzovik — Отзовик (100₽)\n"
         "/doctoru — Docto ru (100₽)\n\n"
         "📋 <b>Управление:</b>\n"
-        "/slots — Показать активные слоты\n"
-        "/close [номер] — Закрыть слот\n"
+        "/slots — Показать активные слоты (с ID)\n"
+        "/close [ID] — Закрыть слот по ID\n"
         "/closeall — Закрыть все слоты\n\n"
         "ℹ️ <b>Для пользователей:</b> /help"
     )
@@ -277,9 +273,9 @@ async def list_slots(message: types.Message):
     if not active_slots:
         await message.answer("Нет активных слотов.")
         return
-    lines = ["<b>Активные слоты:</b>"]
-    for sid, data in active_slots.items():
-        lines.append(f"{sid}. {data['command']} (ID: {data['message_id']})")
+    lines = ["<b>Активные слоты (ID = message_id):</b>"]
+    for msg_id, data in active_slots.items():
+        lines.append(f"🔸 {data['command']} — ID: {msg_id}")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
 
 @dp.message(Command("close"), is_admin)
@@ -290,25 +286,25 @@ async def close_slot(message: types.Message):
             raise ValueError
         slot_id = int(parts[1])
     except:
-        await message.answer("Укажите номер слота: /close <номер>\nПосмотреть номера: /slots")
+        await message.answer("Укажите ID слота: /close <ID>\nПосмотреть ID: /slots")
         return
 
     if slot_id not in active_slots:
-        await message.answer(f"Слот с номером {slot_id} не найден.")
+        await message.answer(f"❌ Слот с ID {slot_id} не найден среди активных.\nПроверьте список: /slots")
         return
 
     data = active_slots.pop(slot_id)
     try:
         await bot.edit_message_text(
             chat_id=CHANNEL_ID,
-            message_id=data["message_id"],
+            message_id=slot_id,
             text=CLOSED_MESSAGE,
             parse_mode=None
         )
-        await message.answer(f"✅ Слот {slot_id} («{data['command']}») закрыт.")
+        await message.answer(f"✅ Слот «{data['command']}» (ID: {slot_id}) закрыт.")
     except Exception as e:
-        logging.error(f"Не удалось отредактировать сообщение: {e}")
-        await message.answer("❌ Ошибка при закрытии слота.")
+        logging.error(f"Не удалось отредактировать сообщение {slot_id}: {e}")
+        await message.answer("❌ Ошибка при закрытии слота. Возможно, сообщение уже удалено.")
 
 @dp.message(Command("closeall"), is_admin)
 async def close_all_slots(message: types.Message):
@@ -321,7 +317,7 @@ async def close_all_slots(message: types.Message):
         try:
             await bot.edit_message_text(
                 chat_id=CHANNEL_ID,
-                message_id=data["message_id"],
+                message_id=slot_id,
                 text=CLOSED_MESSAGE,
                 parse_mode=None
             )
@@ -340,9 +336,7 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    # Запускаем Flask в отдельном потоке
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
-    # Запускаем бота
     asyncio.run(main())
